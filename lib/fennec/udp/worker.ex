@@ -6,9 +6,9 @@ defmodule Fennec.UDP.Worker do
   # be decoded or doesn't know how to process a message
   # it simply crashes.
 
-  alias Fennec.UDP
-  alias Fennec.TURN
   alias Fennec.STUN
+  alias Fennec.TURN
+  alias Fennec.UDP
   alias Fennec.UDP.{WorkerSupervisor, Dispatcher}
 
   use GenServer
@@ -16,6 +16,9 @@ defmodule Fennec.UDP.Worker do
 
   # should be configurable
   @timeout 5_000
+
+  # how many packets should we accept per one :inet.setopts(socket, {:active, N}) call?
+  @burst_length 500
 
   @type state :: %{socket: UDP.socket,
                    nonce_updated_at: integer,
@@ -86,6 +89,14 @@ defmodule Fennec.UDP.Worker do
     {:noreply, next_state, timeout(next_state)}
   end
 
+  def handle_info({:udp_passive, socket},
+                  %{turn: %TURN{allocation: %TURN.Allocation{socket: socket}}} = state) do
+    n = burst_length()
+    Logger.debug(~s"Processed #{n} peer packets")
+    :inet.setopts(socket, [active: n])
+    {:noreply, state, timeout(state)}
+  end
+
   def handle_info(:timeout, state) do
     handle_timeout(state)
   end
@@ -135,4 +146,7 @@ defmodule Fennec.UDP.Worker do
     |> P.put_attr(%Data{content: data})
     |> P.put_attr(XORPeerAddress.new(ip, port))
   end
+
+  def burst_length, do: @burst_length
+
 end
